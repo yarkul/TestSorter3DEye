@@ -34,7 +34,7 @@ namespace TestFileSorter.Core
             return cmp != 0 ? cmp : LineIndex.CompareTo(other.LineIndex);
         }
 
-        public override string ToString() => $"{LineIndex}.{Line}";
+        public override string ToString() => !string.IsNullOrWhiteSpace(Line)?$"{LineIndex}.{Line}":string.Empty;
     }
 
     public class LargeFileSorter : ILargeFileSorter
@@ -72,41 +72,27 @@ namespace TestFileSorter.Core
 
             var pq = new PriorityQueue<(MyLine line, int fileIndex), MyLine>();
 
-            for (int i = 0; i < readers.Count; i++)
+            var parallelOptions = new ParallelOptions
             {
-                if (!readers[i].EndOfStream)
+                MaxDegreeOfParallelism = Environment.ProcessorCount
+            };
+
+            await Parallel.ForEachAsync(readers.Select((reader, index)
+                => (reader, index)), parallelOptions, async (item, ct) =>
+            {
+                var (reader, fileIndex) = item;
+                if (!reader.EndOfStream)
                 {
-                    string tmpLine = await readers[i].ReadLineAsync();
+                    string tmpLine = await reader.ReadLineAsync();
 
                     if (!string.IsNullOrWhiteSpace(tmpLine))
                     {
                         var l = new MyLine(tmpLine);
-                        pq.Enqueue((l, i), l);
-                    }
+
+                        pq.Enqueue((l, fileIndex), l);
+                   }
                 }
-            }
-
-            //var parallelOptions = new ParallelOptions
-            //{
-            //    MaxDegreeOfParallelism = Environment.ProcessorCount
-            //};
-
-            //await Parallel.ForEachAsync(readers.Select((reader, index)
-            //    => (reader, index)), parallelOptions, async (item, ct) =>
-            //{
-            //    var (reader, fileIndex) = item;
-            //    if (!reader.EndOfStream)
-            //    {
-            //        string tmpLine = await reader.ReadLineAsync();
-
-            //        if (!string.IsNullOrWhiteSpace(tmpLine))
-            //        {
-            //            var l = new MyLine(tmpLine);
-
-            //            pq.Enqueue((l, fileIndex), l);
-            //        }
-            //    }
-            //});
+            });
 
             string folderPath = Path.GetDirectoryName(inputFilePath);
             string outputFile = Path.Combine(folderPath, $"FinalResult_SortedFile.txt");
